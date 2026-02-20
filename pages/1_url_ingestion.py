@@ -72,8 +72,14 @@ def call_claude(article_text: str) -> dict:
     # Support both nested [anthropic] section and flat ANTHROPIC_API_KEY
     if "anthropic" in st.secrets:
         api_key = st.secrets["anthropic"]["api_key"]
-    else:
+    elif "ANTHROPIC_API_KEY" in st.secrets:
         api_key = st.secrets["ANTHROPIC_API_KEY"]
+    else:
+        available = list(st.secrets.keys())
+        raise KeyError(
+            f"Anthropic API key not found. Available secret keys: {available}. "
+            "Add ANTHROPIC_API_KEY = \"sk-ant-...\" to your Streamlit secrets."
+        )
     client = anthropic.Anthropic(api_key=api_key)
     message = client.messages.create(
         model="claude-haiku-4-5-20251001",
