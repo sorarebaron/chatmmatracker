@@ -69,7 +69,12 @@ def scrape_url(url: str) -> str | None:
 
 
 def call_claude(article_text: str) -> dict:
-    client = anthropic.Anthropic(api_key=st.secrets["anthropic"]["api_key"])
+    # Support both nested [anthropic] section and flat ANTHROPIC_API_KEY
+    if "anthropic" in st.secrets:
+        api_key = st.secrets["anthropic"]["api_key"]
+    else:
+        api_key = st.secrets["ANTHROPIC_API_KEY"]
+    client = anthropic.Anthropic(api_key=api_key)
     message = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=4096,
