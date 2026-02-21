@@ -29,21 +29,26 @@ Rules:
    - Fights in tables, sidebars, or summary sections at the top or bottom of the article
    Do not skip any fight just because it lacks prose analysis.
 4. For each fight, extract both fighters' names exactly as written, then extract who the analyst picked to win.
-5. If an analyst uses a nickname (e.g. "Stylebender", "Gamebred", "The Nigerian Nightmare"), preserve it in a "nickname_used" field — do not try to resolve it yourself.
-6. If a fighter name has an alternate transliteration or spelling uncertainty, note it in an "alt_spelling_note" field.
-7. If a prediction includes a winning method, capture it in "method_prediction" using EXACTLY one of these values (or null if none stated):
+5. Extract the weight class for each fight if mentioned (e.g. "Lightweight", "Welterweight", "Heavyweight"). Put it in "weight_class". Use null if not stated.
+6. If an analyst uses a nickname (e.g. "Stylebender", "Gamebred", "The Nigerian Nightmare"), preserve it in a "nickname_used" field — do not try to resolve it yourself.
+7. If a fighter name has an alternate transliteration or spelling uncertainty, note it in an "alt_spelling_note" field.
+8. If a prediction includes a winning method, capture it in "method_prediction" using EXACTLY one of these values (or null if none stated):
    - "KO/TKO"  — for knockout, TKO, stoppage, strikes
    - "Submission"  — for any submission finish
    - "Decision"  — for any decision (unanimous, split, majority)
    - "NC"  — no contest
    - "DQ"  — disqualification
-8. If the analyst gives reasoning or key factors, summarize it briefly in "reasoning_notes" (max 30 words).
-9. If you cannot confidently determine who an analyst picked for a fight, set "picked_fighter" to null and "flag_for_review" to true.
-10. Never invent or assume a pick. When in doubt, flag it.
+9. If the analyst gives reasoning or key factors, summarize it briefly in "reasoning_notes" (max 30 words).
+10. If you cannot confidently determine who an analyst picked for a fight, set "picked_fighter" to null and "flag_for_review" to true.
+11. Never invent or assume a pick. When in doubt, flag it.
+12. Extract the publication or platform name (e.g. "MMA Fighting", "Bleacher Report", "YouTube", "Podcast") and put it in the top-level "platform" field. Use the outlet name, not the URL. If unclear, use null.
+13. Extract the event location if mentioned (city and state/country) and put it in the top-level "event_location" field. Use null if not stated.
 
 Return this JSON structure:
 {
   "article_type": "single" or "staff",
+  "platform": "string or null",
+  "event_location": "string or null",
   "analysts": [
     {
       "analyst_name": "string",
@@ -51,6 +56,7 @@ Return this JSON structure:
         {
           "fighter_a": "string",
           "fighter_b": "string",
+          "weight_class": "string or null",
           "picked_fighter": "string or null",
           "nickname_used": "string or null",
           "alt_spelling_note": "string or null",
@@ -245,11 +251,37 @@ elif st.session_state.ing_stage == "review_picks":
         f"**{total_picks}** pick(s) across **{len(analysts)}** analyst(s)"
     )
 
-    event_name = st.text_input(
-        "Event name *",
-        placeholder="e.g. UFC 315",
-        help="Required. A new event row is created automatically if this name doesn't exist yet.",
-    )
+    # ── Event metadata ────────────────────────────────────────────────────────
+    st.markdown("#### Event details")
+    ec1, ec2 = st.columns(2)
+    with ec1:
+        event_name = st.text_input(
+            "Event name *",
+            placeholder="e.g. UFC Houston",
+            help="Required. A new event row is created automatically if this name doesn't exist yet.",
+        )
+    with ec2:
+        event_date = st.date_input(
+            "Event date",
+            value=None,
+            help="Optional. Used in the CSV export.",
+        )
+
+    el1, el2 = st.columns(2)
+    with el1:
+        event_location = st.text_input(
+            "Event location",
+            value=extracted.get("event_location") or "",
+            placeholder="e.g. Houston, Texas",
+            help="Pre-filled from article if found. Edit as needed.",
+        )
+    with el2:
+        article_platform = st.text_input(
+            "Platform / Publication",
+            value=extracted.get("platform") or "",
+            placeholder="e.g. MMA Fighting, Bleacher Report",
+            help="The outlet this article is from. Pre-filled from article if found.",
+        )
 
     st.divider()
 
@@ -275,7 +307,7 @@ elif st.session_state.ing_stage == "review_picks":
                 if pick.get("alt_spelling_note"):
                     st.info(f"Spelling note: {pick['alt_spelling_note']}")
 
-                c1, c2 = st.columns(2)
+                c1, c2, c3 = st.columns([3, 3, 2])
                 with c1:
                     fa = st.text_input(
                         "Fighter A", value=pick.get("fighter_a", ""), key=f"fa_{ai}_{pi}"
@@ -284,6 +316,13 @@ elif st.session_state.ing_stage == "review_picks":
                     fb = st.text_input(
                         "Fighter B", value=pick.get("fighter_b", ""), key=f"fb_{ai}_{pi}"
                     )
+                with c3:
+                    weight_class = st.text_input(
+                        "Weight class",
+                        value=pick.get("weight_class") or "",
+                        placeholder="e.g. Lightweight",
+                        key=f"wc_{ai}_{pi}",
+                    )
 
                 picked = st.text_input(
                     "Picked to win",
@@ -291,8 +330,8 @@ elif st.session_state.ing_stage == "review_picks":
                     key=f"picked_{ai}_{pi}",
                 )
 
-                c3, c4 = st.columns(2)
-                with c3:
+                c4, c5 = st.columns(2)
+                with c4:
                     raw_method = normalize_method(pick.get("method_prediction"))
                     method_idx = METHOD_OPTIONS.index(raw_method) if raw_method in METHOD_OPTIONS else 0
                     method = st.selectbox(
@@ -301,7 +340,7 @@ elif st.session_state.ing_stage == "review_picks":
                         index=method_idx,
                         key=f"method_{ai}_{pi}",
                     )
-                with c4:
+                with c5:
                     raw_conf = pick.get("confidence_tag") or "lean"
                     conf_idx = (
                         CONFIDENCE_OPTIONS.index(raw_conf)
@@ -369,6 +408,7 @@ elif st.session_state.ing_stage == "review_picks":
                     {
                         "fighter_a": fa,
                         "fighter_b": fb,
+                        "weight_class": weight_class.strip() or None,
                         "picked_fighter": picked,
                         "method": method,
                         "confidence": confidence,
@@ -389,7 +429,11 @@ elif st.session_state.ing_stage == "review_picks":
     if st.button("💾 Save all picks", type="primary", disabled=save_disabled):
         saved_count = 0
         try:
-            event_id = get_or_create_event(event_name.strip())
+            event_id = get_or_create_event(
+                name=event_name.strip(),
+                date=str(event_date) if event_date else None,
+                location=event_location.strip() or None,
+            )
 
             for analyst in analysts_data:
                 for pick in analyst["picks"]:
@@ -404,11 +448,14 @@ elif st.session_state.ing_stage == "review_picks":
                         if orig != canon:
                             save_alias(canon, orig)
 
-                    fight_id = get_or_create_fight(event_id, fa, fb)
+                    fight_id = get_or_create_fight(
+                        event_id, fa, fb, weight_class=pick["weight_class"]
+                    )
 
                     pick_row = {
                         "fight_id": fight_id,
                         "analyst_name": analyst["analyst_name"],
+                        "platform": article_platform.strip() or None,
                         "source_url": st.session_state.get("ing_url", ""),
                         "picked_fighter": picked or None,
                         "method_prediction": pick["method"] or None,
