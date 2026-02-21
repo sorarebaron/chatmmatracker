@@ -23,13 +23,23 @@ Your job is to extract all fight predictions and return them as structured JSON 
 Rules:
 1. Detect whether this is a single-analyst article or a multi-analyst "staff picks" article.
 2. If multi-analyst, group each pick under the correct analyst name.
-3. For each fight, extract both fighters' names exactly as written, then extract who the analyst picked to win.
-4. If an analyst uses a nickname (e.g. "Stylebender", "Gamebred", "The Nigerian Nightmare"), preserve it in a "nickname_used" field — do not try to resolve it yourself.
-5. If a fighter name has an alternate transliteration or spelling uncertainty, note it in an "alt_spelling_note" field.
-6. If a prediction includes a method (KO, submission, decision), capture it in "method_prediction".
-7. If the analyst gives reasoning or key factors, summarize it briefly in "reasoning_notes" (max 30 words).
-8. If you cannot confidently determine who an analyst picked for a fight, set "picked_fighter" to null and "flag_for_review" to true.
-9. Never invent or assume a pick. When in doubt, flag it.
+3. Extract ALL fight predictions regardless of format. This includes:
+   - Fights with full written breakdowns or analysis
+   - Fights listed as quick picks, bullet points, or simple name-only lists (e.g. "Prelims: Fighter A, Fighter B")
+   - Fights in tables, sidebars, or summary sections at the top or bottom of the article
+   Do not skip any fight just because it lacks prose analysis.
+4. For each fight, extract both fighters' names exactly as written, then extract who the analyst picked to win.
+5. If an analyst uses a nickname (e.g. "Stylebender", "Gamebred", "The Nigerian Nightmare"), preserve it in a "nickname_used" field — do not try to resolve it yourself.
+6. If a fighter name has an alternate transliteration or spelling uncertainty, note it in an "alt_spelling_note" field.
+7. If a prediction includes a winning method, capture it in "method_prediction" using EXACTLY one of these values (or null if none stated):
+   - "KO/TKO"  — for knockout, TKO, stoppage, strikes
+   - "Submission"  — for any submission finish
+   - "Decision"  — for any decision (unanimous, split, majority)
+   - "NC"  — no contest
+   - "DQ"  — disqualification
+8. If the analyst gives reasoning or key factors, summarize it briefly in "reasoning_notes" (max 30 words).
+9. If you cannot confidently determine who an analyst picked for a fight, set "picked_fighter" to null and "flag_for_review" to true.
+10. Never invent or assume a pick. When in doubt, flag it.
 
 Return this JSON structure:
 {
@@ -44,7 +54,7 @@ Return this JSON structure:
           "picked_fighter": "string or null",
           "nickname_used": "string or null",
           "alt_spelling_note": "string or null",
-          "method_prediction": "string or null",
+          "method_prediction": "KO/TKO" or "Submission" or "Decision" or "NC" or "DQ" or null,
           "confidence_tag": "lean / confident / lock",
           "reasoning_notes": "string or null",
           "flag_for_review": false
@@ -57,6 +67,44 @@ Return this JSON structure:
 CONFIDENCE_OPTIONS = ["lean", "confident", "lock"]
 METHOD_OPTIONS = ["", "KO/TKO", "Submission", "Decision", "NC", "DQ"]
 FUZZY_THRESHOLD = 85
+
+# Normalize free-text method strings Claude might return to the canonical values above
+_METHOD_NORMALIZER = {
+    "ko": "KO/TKO",
+    "tko": "KO/TKO",
+    "ko/tko": "KO/TKO",
+    "knockout": "KO/TKO",
+    "stoppage": "KO/TKO",
+    "strikes": "KO/TKO",
+    "submission": "Submission",
+    "sub": "Submission",
+    "rear naked choke": "Submission",
+    "guillotine": "Submission",
+    "triangle": "Submission",
+    "armbar": "Submission",
+    "decision": "Decision",
+    "unanimous decision": "Decision",
+    "split decision": "Decision",
+    "majority decision": "Decision",
+    "ud": "Decision",
+    "sd": "Decision",
+    "md": "Decision",
+    "points": "Decision",
+    "nc": "NC",
+    "no contest": "NC",
+    "dq": "DQ",
+    "disqualification": "DQ",
+}
+
+
+def normalize_method(raw: str | None) -> str:
+    """Map any Claude-returned method string to an exact METHOD_OPTIONS value, or ''."""
+    if not raw:
+        return ""
+    key = raw.strip().lower()
+    if raw in METHOD_OPTIONS:
+        return raw
+    return _METHOD_NORMALIZER.get(key, "")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -245,12 +293,8 @@ elif st.session_state.ing_stage == "review_picks":
 
                 c3, c4 = st.columns(2)
                 with c3:
-                    raw_method = pick.get("method_prediction") or ""
-                    method_idx = (
-                        METHOD_OPTIONS.index(raw_method)
-                        if raw_method in METHOD_OPTIONS
-                        else 0
-                    )
+                    raw_method = normalize_method(pick.get("method_prediction"))
+                    method_idx = METHOD_OPTIONS.index(raw_method) if raw_method in METHOD_OPTIONS else 0
                     method = st.selectbox(
                         "Method prediction",
                         METHOD_OPTIONS,
