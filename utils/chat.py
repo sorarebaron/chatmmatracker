@@ -658,10 +658,35 @@ class ChatMMABot:
         return ("general", {})
 
     def _extract_event_name(self, q: str) -> str | None:
+        # 1. Numbered events: UFC 324, UFC Vegas 100, UFC Fight Night 100
         m = re.search(r"ufc\s+(\d+|vegas\s+\d+|fight\s+night\s+\d+)", q)
         if m:
             return f"UFC {m.group(1).title()}"
-        # Fall back to the most recent event in the DB
+
+        # 2. City / name-based events: "UFC Houston", "UFC London", "UFC Rio"
+        #    Grab the 1-3 words that follow "ufc" and look them up in the DB.
+        m = re.search(r"ufc\s+([a-z][a-z\s]{1,25}?)(?:\s|$|[?!.,])", q)
+        if m:
+            candidate = m.group(1).strip()
+            # Skip if the word(s) are query keywords, not an event name
+            _skip = {
+                "the", "this", "that", "a", "an", "in", "at", "for", "my",
+                "picks", "fights", "card", "event", "show", "odds", "fight",
+            }
+            if candidate not in _skip:
+                db = get_supabase()
+                resp = (
+                    db.table("events")
+                    .select("name")
+                    .ilike("name", f"%{candidate}%")
+                    .order("date", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if resp.data:
+                    return resp.data[0]["name"]
+
+        # 3. Fall back to the most recent event in the DB
         db = get_supabase()
         resp = (
             db.table("events")
@@ -670,9 +695,7 @@ class ChatMMABot:
             .limit(1)
             .execute()
         )
-        if resp.data:
-            return resp.data[0]["name"]
-        return None
+        return resp.data[0]["name"] if resp.data else None
 
     # ── query handlers ───────────────────────────────────────────────────────
 
