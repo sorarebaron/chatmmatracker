@@ -11,6 +11,7 @@ pages = [
     st.Page("pages/2_qc_editor.py",      title="QC / Editor",    icon=None),
     st.Page("pages/3_results_entry.py",  title="Results Entry",  icon=None),
     st.Page("pages/4_analytics.py",      title="Analytics",      icon=None),
+    st.Page("pages/5_export.py",         title="Export",         icon=None),
 ]
 
 pg = st.navigation(pages)
