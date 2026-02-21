@@ -8,15 +8,19 @@ underdog analysis, and general MMA queries.
 
 import streamlit as st
 
-st.set_page_config(page_title="ChatMMAPicks", layout="wide")
-
 # ── API key check ────────────────────────────────────────────────────────────
 
 def _get_api_key() -> str | None:
+    # Support both nested [anthropic] section and flat ANTHROPIC_API_KEY,
+    # matching the same pattern used by pages/1_url_ingestion.py.
     try:
-        return st.secrets.get("anthropic", {}).get("api_key")
+        if "anthropic" in st.secrets:
+            return st.secrets["anthropic"]["api_key"]
+        if "ANTHROPIC_API_KEY" in st.secrets:
+            return st.secrets["ANTHROPIC_API_KEY"]
     except Exception:
-        return None
+        pass
+    return None
 
 
 api_key = _get_api_key()
@@ -24,8 +28,15 @@ api_key = _get_api_key()
 if not api_key:
     st.title("Chat")
     st.error(
-        "Anthropic API key not found. "
-        "Add `[anthropic] api_key = '...'` to your `.streamlit/secrets.toml`."
+        "Anthropic API key not found in Streamlit secrets. "
+        "Add one of these to your app's **Settings → Secrets** on Streamlit Cloud:\n\n"
+        "```toml\n"
+        "# Option A – nested section (matches the rest of this app)\n"
+        "[anthropic]\n"
+        'api_key = "sk-ant-..."\n\n'
+        "# Option B – flat key\n"
+        'ANTHROPIC_API_KEY = "sk-ant-..."\n'
+        "```"
     )
     st.stop()
 
